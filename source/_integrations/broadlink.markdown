@@ -3,6 +3,7 @@ title: Broadlink
 description: Instructions on setting up Broadlink within Home Assistant.
 ha_category:
   - Climate
+  - Infrared
   - Light
   - Remote
   - Sensor
@@ -18,6 +19,7 @@ ha_domain: broadlink
 ha_config_flow: true
 ha_platforms:
   - climate
+  - infrared
   - light
   - remote
   - select
@@ -56,6 +58,7 @@ The {% term entities %} have the same name as the device by default. To change t
 The {% term entities %} are divided into four subdomains:
 
 - [Climate](#climate)
+- [Infrared](#infrared)
 - [Remote](#remote)
 - [Select](#select)
 - [Sensor](#sensor)
@@ -66,6 +69,41 @@ The {% term entities %} are divided into four subdomains:
 ## Climate
 
 The `climate` entities allow you to monitor and control Broadlink thermostats.
+
+## Infrared
+
+The `infrared` {% term entities %} allow you to send infrared commands through Home Assistant's native [infrared platform](/integrations/infrared/). This provides a standardized way to control IR devices across all remotes.
+
+Once a Broadlink RM device is configured, an "IR transmitter" entity is automatically created. You can send IR commands using the `infrared.async_send_command` service or via automations and scripts.
+
+### Using BroadlinkIRCommand for Pre-existing Broadlink Code
+
+If you have Broadlink-encoded IR data (e.g., from SmartIR databases or the Broadlink e-Control app), you can create `BroadlinkIRCommand` objects to send them:
+
+```python
+import base64
+from broadlink.remote import data_to_pulses
+from homeassistant.components.broadlink.infrared import BroadlinkIRCommand
+
+# Decode SmartIR base64 code
+packet_data = base64.b64decode(b64_code)
+repeat_count = packet_data[1]
+
+# Parse Broadlink packet to microsecond timings
+pulses = data_to_pulses(packet_data)
+timings = list(zip(pulses[::2], pulses[1::2]))
+if len(pulses) % 2:
+    timings.append((pulses[-1], 0))
+
+# Send via infrared platform
+cmd = BroadlinkIRCommand(timings, repeat_count=repeat_count)
+await infrared.async_send_command(hass, entity_id, cmd)
+```
+
+### Repeat Handling
+
+- **Protocol-aware commands** (e.g., `infrared_protocols.NECCommand`): Repeats are encoded in the timing data; Broadlink hardware repeat is automatically set to 0 to avoid duplication
+- **BroadlinkIRCommand**: The `repeat_count` parameter controls Broadlink hardware repeats (0–255), causing the device to re-transmit the entire IR burst multiple times
 
 ## Remote
 
@@ -426,9 +464,22 @@ switch:
 
 The above example creates `switch.philips_tv` and `switch.lg_tv`, which are related to the same universal remote.
 
-__IMPORTANT__: Always use unique names for your switches. A good choice is to prefix the name with the area in which the device is located, e.g. Bedroom TV.
+__IMPORTANT__: Always use unique names for your switches. A good choice is to prefix the name with the area in which the device is located, for example, Bedroom TV.
 
-##  Managing codes for remotes
+## Troubleshooting
+
+### Device is locked
+
+If you see the error `<device name> is locked` in the logs, the device has its lock setting enabled. When a device is locked, the integration cannot communicate with it and will fail to load, so the **Configure** button mentioned in the error is not available.
+
+To resolve this, unlock the device using the Broadlink app on your mobile device:
+
+1. Open the Broadlink app and select the device.
+2. Go to the device settings.
+3. Disable the lock.
+4. In Home Assistant, go to {% my integrations title="**Settings** > **Devices & services**" %}, select **Broadlink**, and select **Reload**.
+
+## Managing codes for remotes
 ### Using e-Control remotes
 
 If you already have your remotes learned on e-Control app you can use this method to "copy" them to Home Assistant.
@@ -492,7 +543,7 @@ First get or learn all the remotes you want to add to Home Assistant in e-Contro
 
 4. Open iBackup viewer then select the iOS backup that you created. Navigate to the App icon and then scroll until you find e-control.app, select this. Select and extract the files jsonButton, jsonIrCode and jsonSublr; they will be located in the Documents/SharedData section. Put these in the same location as the getBroadlinkSharedData.py.
 
-5. Now open a Command Prompt and navigate to the directory where the aforementioned files are located e.g., `C:\Python27`. Now run the command `python getBroadlinkSharedData.py`, you should see something like this:
+5. Now open a Command Prompt and navigate to the directory where the aforementioned files are located, for example `C:\Python27`. Now run the command `python getBroadlinkSharedData.py`, you should see something like this:
 
     ```bash
     C:\Python27>python getBroadlinkSharedData.py
@@ -552,7 +603,6 @@ First get or learn all the remotes you want to add to Home Assistant in e-Contro
 7. Drag a Template node on the Flow to the right of the RM node and link it to the RM node.
 8. Double click the Template node to edit it, select:
 
-   {% raw %}
 
    ```bash
    Property: msg.payload
@@ -561,7 +611,6 @@ First get or learn all the remotes you want to add to Home Assistant in e-Contro
    Output as: Plain text
    ```
 
-   {% endraw %}
 
 9. Drag a Debug node to the right of the Template node and link them.
 10. Show the debug messages, deploy the flow and click on the inject button.
@@ -700,6 +749,6 @@ Assuming that your (or similar) device is in one of these databases:
 
 You can grab `irdb2broadlinkha.sh` from [irdb2broadlinkha](https://github.com/molexx/irdb2broadlinkha) project and try to convert codes to format suitable for Home Assistant.
 
-### Managig codes with Broadlink Manager
+### Managing codes with Broadlink Manager
 
 A Docker based GUI to learn, send, and generate IR and RF codes is available through the [Broadlink Manager project](https://github.com/t0mer/broadlinkmanager-docker)
